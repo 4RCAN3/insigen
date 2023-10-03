@@ -32,7 +32,6 @@ chunking_methods = ['token', 'sentence', 'paragraph']
 
 class insigen:
     def __init__(self,
-                 document: str,
                  use_pretrained_embeds: bool = True,
                  chunking_method: str = 'token',
                  max_num_chunks: int = None,
@@ -45,19 +44,21 @@ class insigen:
         if chunking_method not in chunking_methods:
             raise ValueError("Unkown chunking method found. Allowed chunking methods: ['token', 'sentence', 'paragraph']")
         
-        self.document = document
         self.use_pretrained_embeds = use_pretrained_embeds
         self.embedding_model = embedding_model
         self.tokenizer = tokenizer
 
         if chunking_method == 'token':
+            self.chunker = self._token_chunking
             self.max_num_chunks = max_num_chunks
             self.chunk_length = chunk_length
             self.overlapping_ratio = overlapping_ratio
 
         elif chunking_method == 'sentence':
+            self.chunker = self._sentence_chunking
             pass
         else:
+            self.chunker = self._paragraph_chunking
             pass
 
         if verbose:
@@ -79,8 +80,14 @@ class insigen:
             self.unique_topics = np.unique(self.dataset['category_label'])
         else:
             self.embeds = None
+    
+    def analyse(self, document):
+        self.document = document
+        self.document_tokens = self.tokenizer(document)
+        self.document_chunks = self.chunker(self.document_tokens)
+
         
-    def _load_wiki_dataset():
+    def _load_wiki_dataset(self):
         return pd.read_csv('wiki.csv')
     
     def _load_embeds(self, filename):
@@ -89,9 +96,8 @@ class insigen:
 
         return embeds
 
-    def _clean_text(self, document):
-        processed_tokens = self.tokenizer(document)
-        return ' '.join(processed_tokens)
+    def _clean_text(self, chunks):
+        return [' '.join(self.tokenizer(chunk)) for chunk in chunks]
     
     def _default_tokenizer(self, text):
         return simple_preprocess(strip_tags(text), deacc=True)
@@ -105,8 +111,8 @@ class insigen:
     def _sentence_chunking(self, document):
         return nltk.sent_tokenize(document)
 
-    def _paragraph_chunking(self, paragraph):
-        pass
+    def _paragraph_chunking(self, document):
+        return document.split('\n\n')
 
     def _token_chunking(self, tokens):
         num_chunks = int(np.ceil(len(tokens)/self.chunk_length))
