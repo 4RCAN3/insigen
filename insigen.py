@@ -140,8 +140,7 @@ class insigen:
     """    
 
     def __init__(self,
-                 document: str,
-                 use_pretrained_embeds: bool = True,
+                 tokenizer: callable = None,
                  chunking_method: str = 'token',
                  max_num_chunks: int = None,
                  chunk_length: int = 100,
@@ -155,8 +154,13 @@ class insigen:
         
         if chunking_method not in chunking_methods:
             raise ValueError("Unkown chunking method found. Allowed chunking methods: ['token', 'sentence', 'paragraph']")
+        if embedding_model not in sbert_models:
+            raise UnknownEmbeddingModel("""Unknown model found. Allowed models: 
+                                        ['all-distilroberta-v1',
+                                        'all-mpnet-base-v2',
+                                        'all-MiniLM-L12-v2',
+                                        'all-MiniLM-L6-v2']""")
         
-        self.document = document
         self.use_pretrained_embeds = use_pretrained_embeds
         self.embedding_model = embedding_model
         self.tokenizer = tokenizer
@@ -175,14 +179,8 @@ class insigen:
             self.chunker = self._sentence_chunking
             pass
         else:
+            self.chunker = self._paragraph_chunking
             pass
-
-        if verbose:
-            logger.setLevel(logging.DEBUG)
-            self.verbose = True
-        else:
-            logger.setLevel(logging.WARNING)
-            self.verbose = False
 
         #set tokenizer
         if tokenizer is None: 
@@ -229,10 +227,99 @@ class insigen:
             self.clean_chunks = [''.join(chunk) for chunk in self.document_chunks]
 
         else:
-            self.embeds = None
+            self.document_chunks = self.chunker(document)
+            self.tokenized_chunks = [self.tokenizer(chunk) for chunk in self.document_chunks]
+            self.clean_chunks = [' '.join(chunk) for chunk in self.tokenized_chunks]
         
-    def _load_wiki_dataset():
-        return pd.read_csv('wiki.csv')
+        self.sentence_vectors = self._embed_document(self.clean_chunks)
+    
+
+    def _calculate_chunk_weights(self, chunks):
+        """This method calculates the weight for each chunk.
+        It is used in calculating the topic distribution
+
+        Args:
+            chunks (list): A list of chunks for the documenet
+
+        Returns:
+            list: weight matrix
+        """ 
+
+        logging.info("Calculating chunk weight matrix")
+        max_len = max([len(chunk.split(' ')) for chunk in chunks])
+        weight_matrix = [1]*len(chunks)
+
+        for i in range(len(chunks)):
+            chunk = chunks[i].split(' ')
+            weight_matrix[i] = len(chunk)/max_len
+
+        return weight_matrix
+
+    def _calculate_topic_vectors(self):
+        """This method is used to compute topic vectors from the
+        trained embeddings. The embeddings must match the dataset.
+
+        Returns:
+            Numpy Array: Topic vectors
+        """        
+        logging.info("Calculating topic vectors")
+        topic_inds = [np.where(self.dataset['category_label'] == topic) for topic in self.unique_topics]
+        topic_vecs = [self.embeds[ind] for top in topic_inds for ind in top]
+
+        return np.array([np.mean(vecs, axis = 0) for vecs in topic_vecs])
+    
+
+    def _compute_cosine(self, A: list, B: list) -> float:
+        """
+        Function to calculate the cosine angle between two vectors
+        In other words, it is used to check the similarity of two vectors/embeddings
+
+        Args:
+            A (nd array): Vector A
+            B (nd array): Vector B
+
+        Returns:
+            float: Returns a value between 0 and 1, where 0 represents least similar and 1 represents most similar
+        """        
+
+        return np.dot(A,B)/(norm(A)*norm(B))
+
+
+    def _calculate_topics(self, query_embed, metric = 'max', max_count = 1, threshold = 0.5):
+        """This method calculates the similar topics based on a metric
+
+        Args:
+            query_embed (Numpy Array): Text sentence vector 
+            metric (str, optional): This metric defines how the 
+            topics will be found Can be set to 'threshold', to get
+            all the topics above a similarity threshold. Defaults to 'max'.
+            'Max' metric gets the top "n" topics
+            max_count (int, optional): This argument should be used with 
+            max metric. It specifies the top x amount of topics that
+            get fetched. Defaults to 1.
+            threshold (float, optional): This argument should be used with
+            threshold metric. It specifies the threshold similarity over 
+            which all topics will be fetched. Defaults to 0.5.
+
+        Returns:
+            tuple: (list of topics, corresponding similarity scores)
+        """        
+        logging.info("Finding topic distribution")
+        similarity = np.array([self._compute_cosine(query_embed, vec) for vec in self.topic_vectors])
+        if metric == 'threshold':
+            indexes = np.where(similarity >= threshold)
+        else:
+            indexes = np.argsort(similarity)[-max_count:][::-1]
+
+        return self.unique_topics[indexes], similarity[indexes]
+
+    def _load_wiki_dataset(self):
+        """Loads the default wikipedia article dataset
+
+        Returns:
+            DataFrame: Wikipedia dataset
+        """        
+        return pd.read_csv('Data/wiki.csv')
     
     def _load_embeds(self, filename):
         """Load the sentence embeddings.
@@ -248,9 +335,8 @@ class insigen:
 
         return embeds
 
-    def _clean_text(self, document):
-        processed_tokens = self.tokenizer(document)
-        return ' '.join(processed_tokens)
+    def _clean_text(self, text):
+        return re.sub(r'\[ \d+ \]', '', text)
     
     def _default_tokenizer(self, text):
         """This is the default tokenization method. It is 
@@ -290,8 +376,16 @@ class insigen:
         """        
         return sent_tokenize(document)
 
-    def _paragraph_chunking(self, paragraph):
-        pass
+    def _paragraph_chunking(self, document):
+        """This method is used to chunk a document paragraph wise
+
+        Args:
+            document (str): Text that needs to be chunked
+
+        Returns:
+            list: List of document chunks
+        """        
+        return document.split('\n\n')
 
     def _token_chunking(self, tokens):
         """This method is used to chunk a document using tokens.
