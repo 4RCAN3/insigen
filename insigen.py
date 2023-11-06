@@ -165,6 +165,7 @@ class insigen:
         self.embedding_model = embedding_model
         self.tokenizer = tokenizer
         self.chunking_method = chunking_method
+        self.trained = True
 
         if verbose:
             logging.basicConfig(level=logging.INFO)
@@ -197,6 +198,7 @@ class insigen:
         else:
             if embed_file == default_embeds or dataset_file == default_dataset:
                 warnings.warn("Use the train() method to train the model on your own dataset")
+                self.trained = False
             else:
                 self.embeds = self._load_embeds(embed_file)
                 self.dataset = pd.read_csv(dataset_file)
@@ -216,7 +218,7 @@ class insigen:
         """        
 
         logging.info("Converting document to sentence vectors")
-        if self.embeds is None:
+        if not self.trained:
             raise EmbeddingsNotFound("Embeddings Not Found. Use Pre-Trained Embeddings instead, or train your own model using the train method")
 
         self.document = document
@@ -625,16 +627,17 @@ class insigen:
         self.dataset = dataset
         self.unique_topics = np.unique(self.dataset['category_label'])
         self.topic_vectors = self._calculate_topic_vectors()
+        self.trained = True
 
         return sentence_vectors
 
 
 
-article = scraper.getArticle('wiki/League_of_Legends')
+'''article = scraper.getArticle('wiki/League_of_Legends')
 ins = insigen(use_pretrained_embeds=False)
 print("Topic Distribution:\n", ins.get_topic_distribution(article))
 print("Summary:\n", ins.generate_summary(article, topic_match='Games and Toys'))
 freq = ins.get_keyword_frequency(article, min_len=2, max_len=3)
 cloud = ins.generate_wordcloud(freq)
 plt.imshow(cloud)
-plt.show()
+plt.show()'''

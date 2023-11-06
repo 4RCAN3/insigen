@@ -1,0 +1,183 @@
+<!doctype html>
+<html>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="./output.css" rel="stylesheet">
+    <link rel="shortcut icon" href="../media/m7.webp" type="image/x-icon">
+    <title>Insigen</title>
+</head>
+
+<body class="prose prose-invert static mx-auto my-7 max-w-2xl bg-slate-800 text-white">
+    <div class="px-3 pb-3 pt-0 shadow-xl shadow-black">
+        <section class="flex items-center">
+            <img src="../media/m7.webp" alt="league of legends icon">
+            <h1 class="underline">
+                Insigen
+            </h1>
+        </section>
+
+        <section>
+            <h2>
+                Analysis of a Wikipedia article
+            </h2>
+
+            <p>
+                We have scraped the Wikipedia article of a popular muliplayer video game.
+                The wikipedia article can be reached through this link:
+                <a href="https://en.wikipedia.org/wiki/League_of_Legends" target="_blank">League Of Legends</a>
+            </p>
+        </section>
+
+        <section id="topic-distribution" class="group">
+            <h2>• Topic Distribution</h2>
+
+            <article class="group-hover:block absolute left-3 ml-2 hidden max-w-sm rounded-lg p-3 pt-2 shadow-xl shadow-black">
+                A topic distribution represents what percentage of the article/document is related 
+                to a particular topic. A text can be related to multiple topics, and this provides 
+                an estimate of how much a text is related to that topic.
+            </article>
+
+            <figure class="h-[600px]">
+                <canvas id="pie-chart"></canvas>
+            </figure>
+            
+            <figure>
+                <canvas id="bar-graph"></canvas>
+            </figure>
+        </section>
+
+        <section id="word-cloud" class="group">
+            <h2>• Word Cloud</h2>
+            <p> 
+                A word cloud is a visual representation of a collection of words or terms where the 
+                size of each word indicates its frequency or importance within the collection. 
+                Frequencies for each word is generated, where stopwords are removed and only viable 
+                words are kept. 
+            </p>
+            
+            <p class="absolute left-3 ml-2 hidden max-w-sm rounded-lg p-3 pt-2 shadow-xl shadow-black group-hover:block">
+                Along with regular words, n-grams are also formed to keep track of frequencies of 
+                "Multiple Words" that occur together frequently. An example of n-gram could be a 
+                person's name such as Elon Musk. These n-grams can be used frequently within a text 
+                and it is important to keep a count of these as well. Together, a frequency 
+                distribution is generated which helps in forming the word cloud
+            </p>
+            <figure>
+                <img src="../media/cloud_image.png" alt="word cloud">
+            </figure>
+        </section>
+
+        <section id="summary">
+            <h2>• Summary</h2>
+
+            <p>The generated summary is as follows:</p>
+
+            <article>
+                <p>
+                    League of Legends has received generally positive reviews; critics highlighted its accessibility,
+                    character designs, and production value. League of Legends (LoL), commonly referred to as League, is
+                    a 2009 multiplayer online battle arena video game developed and published by Riot Games.
+                </p>
+
+                <p>
+                    Its success has spawned several spin-off video games, including League of Legends: Wild Rift, a
+                    mobile version, Legends of Runeterra, a digital collectible card game and Ruined King: A League of
+                    Legends Story, a turn-based role-playing game, among others. Since its release in October 2009,
+                    League has been free-to-play and is monetized through purchasable character customization.
+
+                </p>
+
+                <p>
+                    Inspired by Defense of the Ancients, a custom map for Warcraft III, Riot's founders sought to
+                    develop a stand-alone game in the same genre. In 2019, League regularly peaked at eight million
+                    concurrent players, and its popularity has led to tie-ins such as music, comic books, short stories,
+                    and the animated series Arcane. League of Legends is a multiplayer online battle arena (MOBA) game
+                    in which the player controls a character ("champion") with a set of unique abilities from an
+                    isometric perspective.
+                </p>
+
+                <p>
+                    League of Legends is the world's largest esport, with an international competitive scene consisting
+                    of multiple regional leagues; they culminate in an annual League of Legends World Championship.
+                    However, negative and abusive in-game player behavior, criticized since the game's early days,
+                    persists despite Riot's attempts to fix the problem. Each of the ten players controls a character,
+                    known as a "champion", with unique abilities and differing styles of play.
+                </p>
+            </article>
+        </section>
+    </div>
+
+    <script src="./chart.js"></script>
+
+    <script>
+        Chart.defaults.color = "#fff";
+        Chart.defaults.borderColor = "rgb(82 82 91)";
+
+        const barGraph = document.getElementById('bar-graph');
+
+        const xValues = ['Board games', 'Games and Toys', 'Literature', 'Manmade geographical features', 'Sports'];
+        const yValues = [18.49578413309681, 20.646892478860735, 19.8909914527773, 18.32614586824961, 22.640186067015552];
+
+        new Chart(barGraph, {
+            type: 'bar',
+            data: {
+                labels: xValues,
+                datasets: [{
+                    label: "%",
+                    data: yValues,
+                    borderWidth: 0,
+                    backgroundColor: [
+                        'rgba(54, 162, 235, 0.8)',
+                        'rgba(255, 99, 132, 0.8)',
+                        'rgba(255, 159, 64, 0.8)',
+                        'rgba(255, 205, 86, 0.8)',
+                        'rgba(153, 102, 255, 0.8)',
+                        'rgba(75, 192, 192, 0.8)'
+                    ]
+                }],
+            }
+        });
+
+        const pieChart = document.getElementById('pie-chart');
+
+        const pChart = new Chart(pieChart, {
+            type: 'doughnut',
+            data: {
+                labels: xValues,
+                datasets: [{
+                    label: '%',
+                    data: yValues,
+                    backgroundColor: [
+                        'rgba(54, 162, 235, 0.8)',
+                        'rgba(255, 99, 132, 0.8)',
+                        'rgba(255, 159, 64, 0.8)',
+                        'rgba(255, 205, 86, 0.8)',
+                        'rgba(153, 102, 255, 0.8)',
+                        'rgba(75, 192, 192, 0.8)'
+                    ]
+                }]
+            },
+            options: {
+                plugins: {
+                    labels: {
+                        render: 'image',
+                        images: [
+                            null,
+                            null,
+                            {
+                                src: './m7.webp',
+                                width: 120,
+                                height: 120
+                            }
+                        ]
+                    }
+                }
+            }
+        });
+    </script>
+
+</body>
+
+</html>
