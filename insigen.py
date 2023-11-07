@@ -457,7 +457,7 @@ class insigen:
 
         return cloud
     
-    def generate_summary(self, text, topic_match, position_weight = 10, num_sentences = 10):
+    def generate_summary(self, text, topic_match, topic_weight = 1, similarity_weight = 1, position_weight = 10, num_sentences = 10):
         """This method generates an extractive summary of the text
 
         Args:
@@ -465,6 +465,10 @@ class insigen:
             topic_match (str): a topic that can match with the text. 
             This adds additional weight to sentences that are more related to the topic. 
             use the unique_topic attribute to get a list of topics that can match.
+            topic_weight (int, optional): Adds weightage to the topic similarity score
+            Increasing this parameter results to more topic oriented summary.
+            similarity_weight (int, optional): Adds weightage to sentence similarity score.
+            Increasing this parameter results in extracting more co-related sentences.
             position_weight (int, optional): Adds weightage to the position of the sentences.
             Increasing this parameter results to more position oriented summary; i.e 
             Texts present early in the document are given more weightatge. Defaults to 10.
@@ -485,11 +489,11 @@ class insigen:
         similarity_matrix = np.zeros((len(sentences), len(sentences)))
 
         for i in range(len(sentence_vectors)):
-            topic_similarity = self._compute_cosine(sentence_vectors[i], topic_embed)
+            topic_similarity = topic_weight*(self._compute_cosine(sentence_vectors[i], topic_embed))
             position_score = position_weight*(1.0 - (i / len(sentence_vectors)))
             for j in range(len(sentence_vectors)):
                 if i != j:
-                    similarity_matrix[i][j] = self._compute_cosine(sentence_vectors[i], sentence_vectors[j]) + topic_similarity + position_score
+                    similarity_matrix[i][j] = similarity_weight*(self._compute_cosine(sentence_vectors[i], sentence_vectors[j])) + topic_similarity + position_score
             
 
         graph = nx.from_numpy_array(similarity_matrix)
