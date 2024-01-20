@@ -15,18 +15,20 @@ from wordcloud import WordCloud
 from nltk.util import everygrams
 from sentence_transformers import SentenceTransformer
 import pickle
-from gensim.parsing.preprocessing import remove_stopwords
-import Tests.scraper as scraper
+import scraper
 import numpy as np
 from numpy.linalg import norm
 import networkx as nx
 import matplotlib.pyplot as plt
 from nltk.tokenize import sent_tokenize
+from nltk import word_tokenize, pos_tag
 import logging
 from collections import Counter
 import PyPDF2
+from nltk.corpus import stopwords
 import warnings
 
+stopwords = stopwords.words('english')
 
 #Allowed sentence bert models
 sbert_models = ['all-distilroberta-v1',
@@ -43,6 +45,9 @@ default_dataset = 'Data/wiki.csv'
 # -------------------------------------------------------------------------
 #Exceptions
 class EmbeddingsNotFound(Exception):
+    pass
+
+class UnmatchedEmbeddings(Exception):
     pass
 
 class IncorrectFormat(Exception):
@@ -184,7 +189,7 @@ class insigen:
             pass
 
         #set tokenizer
-        if tokenizer is None: 
+        if tokenizer is None:
             self.tokenizer = self._default_tokenizer
         
 
@@ -283,8 +288,10 @@ class insigen:
         Returns:
             float: Returns a value between 0 and 1, where 0 represents least similar and 1 represents most similar
         """        
-
-        return np.dot(A,B)/(norm(A)*norm(B))
+        try:
+            return np.dot(A,B)/(norm(A)*norm(B))
+        except ValueError as e:
+            raise UnmatchedEmbeddings("The embedding model should be the same as the embedding model used to train the pre-trained embeddings")
 
 
     def _calculate_topics(self, query_embed, metric = 'max', max_count = 1, threshold = 0.5):
@@ -407,6 +414,23 @@ class insigen:
         return [" ".join(tokens[i:i + self.chunk_length])
             for i in list(range(0, len(tokens), int(self.chunk_length * (1 - self.overlapping_ratio))))[0:num_chunks]]
 
+    def filter_open_ended_keywords(self, keywords):
+        filtered_keywords = []
+
+        for keyword in keywords:
+            # Tokenize the keyword into words
+            words = word_tokenize(keyword.lower())
+
+            # Perform POS tagging
+            pos_tags = pos_tag(words)
+
+            if pos_tags[0][1].startswith('VB') or (pos_tags[-1][1].startswith('NN') == False) or pos_tags[0][1].startswith('IN'):
+                continue
+
+            filtered_keywords.append(keyword)
+
+        return filtered_keywords
+
     def get_text_from_pdf(self, filename: str) -> str:
         """A method to fetch text from a pdf file
 
@@ -506,7 +530,7 @@ class insigen:
         return summary
 
     
-    def get_keyword_frequency(self, document, min_len = 2, max_len = 4, frequency_threshold = 2):
+    def get_keyword_frequency(self, document, min_len = 2, max_len = 4, frequency_threshold = 2, contextual_threshold = 0.5):
         """This method can be used to generate a word frequency dictionary
 
         Args:
@@ -517,31 +541,56 @@ class insigen:
             of the n-grams that are to be found in the text. Defaults to 4.
             frequency_threshold (int, optional): This parameter specifies
             the minimum occurence of the n-grams to be included in the dictionary. Defaults to 2.
+            contextual_threshold (float, optional): This parameter specifies
+            the minimum score for a word to be included in the keywords. Defaults to 0.5.
 
         Returns:
             dict: word count dictionary
         """        
         logging.info("Finding keyword frequencies")
-        document_tokens = self.tokenizer(document)
+        document_tokens = [token.lower() for token in (re.sub(r'[^\w\s]', '', document)).split()]
 
         ngrams = list(everygrams(document_tokens, min_len=min_len, max_len=max_len))
 
         frequent_grams = dict()
         for gram in ngrams:
-            without_stopwords = remove_stopwords(' '.join(gram))
-            if without_stopwords == '':
-                continue
-            else:
-                frequent_grams[' '.join(gram)] = ngrams.count(gram)
+            frequent_grams[' '.join(gram)] = ngrams.count(gram)
         
-        filtered_words = remove_stopwords(' '.join(document_tokens)).split(' ')
+        filtered_words = []
+        for token in document_tokens:
+            if (token.lower() in stopwords):
+                continue    
+            else:
+                filtered_words.append(token)
         word_freq = Counter(filtered_words)
 
         frequent_grams.update(word_freq)
+        frequent_grams = {key: val for key, val in frequent_grams.items() if val > frequency_threshold}
 
-        self.frequent_grams = {key: val for key, val in frequent_grams.items() if val > frequency_threshold}
+        keys = list(frequent_grams.keys())
+        keys.sort(key=len, reverse=True)
 
-        return self.frequent_grams
+        # Filter out subsets
+        subset_removed = {}
+        for key in keys:
+            if not any(key in other_key for other_key in subset_removed):
+                subset_removed[key] = frequent_grams[key]
+
+        doc_embed = self._embed_document(document)
+        key_embeds = self._embed_document(list(subset_removed.keys()))
+
+        contextualized_keywords = {}
+        for count, key in enumerate(subset_removed.keys()):
+            sim = self._compute_cosine(doc_embed, key_embeds[count])
+            if sim > 0.2:
+                contextualized_keywords[key] = (subset_removed[key],sim)
+        
+        contextualized_keywords = {key: val for key, val in contextualized_keywords.items() if val[1] > contextual_threshold}
+
+        closed_ended_keywords = self.filter_open_ended_keywords(contextualized_keywords.keys())
+        contextualized_keywords = {key: contextualized_keywords[key] for key in closed_ended_keywords}
+
+        return contextualized_keywords
 
     def get_topic_distribution(self, document, metric = 'max', max_count = 1, threshold = 0.5):
         """Get a topic distribution for a given document, or text
@@ -576,7 +625,7 @@ class insigen:
                     topic_scores[top] += scores[j] * chunk_weights[i]
                     topic_counts[top] += 1
                 else:
-                    topic_scores[top] = scores[j]
+                    topic_scores[top] = scores[j] * chunk_weights[i]
                     topic_counts[top] = 1
 
         topic_distribution = {topic: topic_scores[topic] / topic_counts[topic] for topic in topic_scores.keys()}
@@ -636,12 +685,13 @@ class insigen:
         return sentence_vectors
 
 
-
-'''article = scraper.getArticle('wiki/League_of_Legends')
-ins = insigen(use_pretrained_embeds=False)
-print("Topic Distribution:\n", ins.get_topic_distribution(article))
-print("Summary:\n", ins.generate_summary(article, topic_match='Games and Toys'))
+'''
+article = scraper.getArticle('wiki/Celebrity')
+ins = insigen()
+#print("Topic Distribution:\n", ins.get_topic_distribution(article))
+#print("Summary:\n", ins.generate_summary(article, topic_match='Culture and Humanities '))
 freq = ins.get_keyword_frequency(article, min_len=2, max_len=3)
+print(freq)
 cloud = ins.generate_wordcloud(freq)
 plt.imshow(cloud)
 plt.show()'''
