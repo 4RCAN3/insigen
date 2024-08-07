@@ -155,6 +155,7 @@ class insigen:
                  dataset_file: str = 'Data/wiki.csv',
                  embedding_model: str = 'all-mpnet-base-v2',
                  verbose: bool = False,
+                 device = 'cpu'
                  ) -> None:
         
         if chunking_method not in chunking_methods:
@@ -171,6 +172,7 @@ class insigen:
         self.tokenizer = tokenizer
         self.chunking_method = chunking_method
         self.trained = True
+        self.device = device
 
         if verbose:
             logging.basicConfig(level=logging.INFO)
@@ -369,9 +371,9 @@ class insigen:
         Returns:
             Numpy Array: Sentence vector for the document
         """        
-
+        device = self.device
         embedding_model = self.embedding_model
-        model = SentenceTransformer(embedding_model)
+        model = SentenceTransformer(embedding_model, device = device)
         return model.encode(documents)
     
     def _sentence_chunking(self, document):
@@ -467,7 +469,7 @@ class insigen:
         Returns:
             obj: Wordcloud object
         """                
-        
+        word_frequency_count = {key: item[0] for key, item in word_frequency_count.items()}
         logging.info("Generating Word Cloud")
         
         wordcloud = WordCloud(
@@ -481,7 +483,7 @@ class insigen:
 
         return cloud
     
-    def generate_summary(self, text, topic_match, topic_weight = 1, similarity_weight = 1, position_weight = 10, num_sentences = 10):
+    def generate_summary(self, text, topic_match = None, topic_weight = 1, similarity_weight = 1, position_weight = 10, num_sentences = 10):
         """This method generates an extractive summary of the text
 
         Args:
@@ -508,12 +510,12 @@ class insigen:
         embeds = pickle.load(open('Data/embeds.pickle', 'rb'))
         topics = pickle.load(open('Data/topics.pickle', 'rb'))
 
-        topic_embed = embeds[list(topics).index(topic_match)]
+        topic_embed = embeds[list(topics).index(topic_match)] if topic_match != None else topic_match
         
         similarity_matrix = np.zeros((len(sentences), len(sentences)))
 
         for i in range(len(sentence_vectors)):
-            topic_similarity = topic_weight*(self._compute_cosine(sentence_vectors[i], topic_embed))
+            topic_similarity = topic_weight*(self._compute_cosine(sentence_vectors[i], topic_embed)) if topic_match != None else 0
             position_score = position_weight*(1.0 - (i / len(sentence_vectors)))
             for j in range(len(sentence_vectors)):
                 if i != j:
@@ -530,7 +532,7 @@ class insigen:
         return summary
 
     
-    def get_keyword_frequency(self, document, min_len = 2, max_len = 4, frequency_threshold = 2, contextual_threshold = 0.5):
+    def get_keyword_frequency(self, document, min_len = 2, max_len = 4, frequency_threshold = 5, contextual_threshold = 0.2):
         """This method can be used to generate a word frequency dictionary
 
         Args:
@@ -558,37 +560,29 @@ class insigen:
         
         filtered_words = []
         for token in document_tokens:
-            if (token.lower() in stopwords):
+            if (token.lower() in stopwords) or token in filtered_words:
                 continue    
             else:
                 filtered_words.append(token)
-        word_freq = Counter(filtered_words)
+
+        word_freq = {word: document.count(word) for word in filtered_words}
 
         frequent_grams.update(word_freq)
-        frequent_grams = {key: val for key, val in frequent_grams.items() if val > frequency_threshold}
-
+        frequent_grams = {key: val for key, val in frequent_grams.items() if val > 2}
         keys = list(frequent_grams.keys())
         keys.sort(key=len, reverse=True)
 
-        # Filter out subsets
-        subset_removed = {}
-        for key in keys:
-            if not any(key in other_key for other_key in subset_removed):
-                subset_removed[key] = frequent_grams[key]
-
+        closed_ended_keywords = self.filter_open_ended_keywords(frequent_grams.keys())
+        filtered_keys = {key: frequent_grams[key] for key in closed_ended_keywords}
+        
         doc_embed = self._embed_document(document)
-        key_embeds = self._embed_document(list(subset_removed.keys()))
+        key_embeds = self._embed_document(list(filtered_keys.keys()))
 
         contextualized_keywords = {}
-        for count, key in enumerate(subset_removed.keys()):
+        for count, key in enumerate(filtered_keys.keys()):
             sim = self._compute_cosine(doc_embed, key_embeds[count])
-            if sim > 0.2:
-                contextualized_keywords[key] = (subset_removed[key],sim)
-        
-        contextualized_keywords = {key: val for key, val in contextualized_keywords.items() if val[1] > contextual_threshold}
-
-        closed_ended_keywords = self.filter_open_ended_keywords(contextualized_keywords.keys())
-        contextualized_keywords = {key: contextualized_keywords[key] for key in closed_ended_keywords}
+            if sim > contextual_threshold and filtered_keys[key] > frequency_threshold:
+                contextualized_keywords[key] = (filtered_keys[key],sim)
 
         return contextualized_keywords
 
@@ -683,15 +677,3 @@ class insigen:
         self.trained = True
 
         return sentence_vectors
-
-
-'''
-article = scraper.getArticle('wiki/Celebrity')
-ins = insigen()
-#print("Topic Distribution:\n", ins.get_topic_distribution(article))
-#print("Summary:\n", ins.generate_summary(article, topic_match='Culture and Humanities '))
-freq = ins.get_keyword_frequency(article, min_len=2, max_len=3)
-print(freq)
-cloud = ins.generate_wordcloud(freq)
-plt.imshow(cloud)
-plt.show()'''

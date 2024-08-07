@@ -6,7 +6,15 @@ __pycache__/
 # C extensions
 *.so
 
+
+EvalResults/
+Evaluations/
+Survey/
+data-display/
 Tests/
+Data/Olid/
+.vscode
+Data/td.json
 
 # Distribution / packaging
 .Python
